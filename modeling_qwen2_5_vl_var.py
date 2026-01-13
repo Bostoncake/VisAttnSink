@@ -409,14 +409,15 @@ class VARProcessor(StashEngine):
         # Clone attention map for modification
         modified_attn = attention_map.clone()
 
+        # Get query length (1 during decode, N during prefill)
+        bsz, num_heads, q_len, seq_len = attention_map.shape
+
         # Split sink indices into visual and text
         vis_sink_mask = (indices >= image_start) & (indices < image_start + image_len)
         vis_indices = indices[vis_sink_mask]
         text_indices = indices[~vis_sink_mask]
 
         # Process each unique (batch, head) pair
-        num_heads = attention_map.shape[1]
-
         for h in range(num_heads):
             # Get query positions for this head
             head_mask = coord[:, 1] == h
@@ -426,6 +427,11 @@ class VARProcessor(StashEngine):
             query_coord = coord[head_mask][:, 2]
             batch_coord = coord[head_mask][:, 0]
             head_coord = coord[head_mask][:, 1]
+
+            # Handle decode case: during decode, q_len=1, so query position is always 0
+            if q_len == 1:
+                # Clamp all query coordinates to 0 (the only valid position during decode)
+                query_coord = torch.zeros_like(query_coord)
 
             # Select attention map for these queries [num_queries, seq_len]
             selected_attn_map = modified_attn[batch_coord, head_coord, query_coord, :].clone()
